@@ -2149,15 +2149,17 @@ plot(train_final_lm)
 
 ![](Ames_Iowa_files/figure-html/unnamed-chunk-42-1.png)<!-- -->![](Ames_Iowa_files/figure-html/unnamed-chunk-42-2.png)<!-- -->![](Ames_Iowa_files/figure-html/unnamed-chunk-42-3.png)<!-- -->![](Ames_Iowa_files/figure-html/unnamed-chunk-42-4.png)<!-- -->
 
-Upon review of the diagnostic plots, we see the following:  
-- Normality:The data appears to be relatively normal with some departures from linearity in the qqplot in the tails of the residuals, because of this the decision was made to log transform the following variables: Sales Price, Year Remodel Addition, 2nd Floor Square footage, Lot Area, and square footage of living area in the house per 100 foot
-- Constant Variance: The residual plots form a relatively random cloud which supports Constant Variance.
-- Linear Trend:  Similarly, the residual plots support linearity of the model.
-- Independence: Based on the data provided, it does not appear that any homes have appeared more than once—therefore, we will assume independence.
-- Influential Points:
+Upon review of the diagnostic plots, we see the following: 
+
+-Normality: The data appears to be relatively normal with some departures from linearity in the qqplot in the tails of the residuals, because of this the decision was made to log transform the following variables: Sales Price, Year Remodel Addition, 2nd Floor Square footage, Lot Area, and square footage of living area in the house per 100 foot
+-Constant Variance: The residual plots form a relatively random cloud which supports Constant Variance.
+-Linear Trend:  Similarly, the residual plots support linearity of the model.
+-Independence: Based on the data provided, it does not appear that any homes have appeared more than once—therefore, we will assume independence.
+-Influential Points:
 Please see the discussion above for overall influential points.  
 
-The Variance Inflation Factors for each of the coefficients are all less than 10, so there is minimal multicollinearity within the model, so it is safe to proceed with creating the final predictions from the test dataset. 
+The Variance Inflation Factors (VIF) for each of the coefficients are all less than 10, so there is minimal multicollinearity within the model, so it is safe to proceed with creating the final predictions from the test dataset.
+
 
 ```r
 #Transformations and Feature Engineering in the test dataset
@@ -2189,7 +2191,9 @@ print(head(pred))
 ## 5 1465  187886.5
 ## 6 1466  171614.1
 ```
-The final Kaggle submission of the this Model had a error of 0.133, which is better than 50% of the subimssions, but could be improved by more advanced regression techniques, including Ridge Regression and ElasticNet.  These techniques will be investigated in future projects.  Forward elimination seemed to be the most efficient model achieving an adjusted R-squared using only 29 variables.  
+
+The final Kaggle submission of the this Model had a error of 0.133, which is better than 50% of the subimssions, but could be improved by more advanced regression techniques, including Ridge Regression and ElasticNet.  These techniques will be investigated in future projects.  Forward elimination seemed to be the most efficient model achieving an adjusted R-squared using only 29 variables.
+
 ### Appendix (Original SAS Code)
 
 ```r
