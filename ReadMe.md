@@ -16,7 +16,7 @@ Hi, I'm Steve Merritt, a recently transitioned military veteran.  For 20 years, 
 Along the way, we also got to some pretty cool stuff like [this](https://drive.google.com/open?id=11-Dsjz6g5VQzNAheFw__-NFchUt_r1y6).
 
 
-It was during this final tour, where my passion for data began.  It all started with a problem.  As the CO of a squadron, a lot of administrative tasks require your attention, but none more important than the daily flight schedule.  My schedulers would spend hours everyday painstakingly combing through 60 different qualifications (attributes or features) of 60 different pilots (observations) to make sure they chose the right pilot for the job.  Imagine, manually combing through a 60 x 60 matrix everyday to make, at times, life and death decisions.  
+It was during this final tour, where my passion for data began.  It all started with a problem.  As the CO of a squadron, a lot of administrative tasks require your attention, but none more important than the daily flight schedule.  My schedulers would spend hours everyday painstakingly combing through 60 different qualifications (columns or features) of 60 different pilots (observations or instances) to make sure they chose the right pilot for the job.  Imagine, manually combing through a 60 x 60 matrix everyday to make, at times, life and death decisions.  
 
 There had to be a better way!  
 
