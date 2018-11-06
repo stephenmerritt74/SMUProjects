@@ -1,0 +1,1068 @@
+---
+title: "Ames Iowa"
+author: "Stephen Merritt"
+date: "October 31, 2018"
+output: 
+    html_document:
+        keep_md: yes
+---
+
+### Introduction
+
+---
+
+Predicting real estate prices is immensely important to the overall health of the US economy.  It is estimated that 16 trillion in total value is represented by residential properties values, a stunning number when compared to the estimated 18 trillion value of the US stock market.  The valuation of the real estate market is characterized by extreme heterogeneity due to the property location and its physical attributes.  In fact, the theoretical price of a piece of real estate can be described as a linear combination of attributes common to all pieces of real estate.  At Thomas, Lingle, and Merritt, we look to optimize this linear relationship with advanced regression techniques to provide the most up to date estimate of your property value.  In the pages that follow, we’ll provide a sampling of our methods on the Ames, IA housing data to demonstrate that our statistical modeling is far superior to the competition. 
+[Forcasting Real Estate Prices](https://rady.ucsd.edu/faculty/directory/valkanov/pub/docs/HandRE_GPTV.pdf)
+ 
+Data Description: 
+The Ames, IA housing dataset originated from the Ames Assessor’s Office and is used in computing assessed values for individual residential properties sold in Ames, IA from 2006 to 2010.  It was compiled Dean De Cock for use in data science education and it contains 2930 observations, 82 variables (23 nominal, 23 ordinal, 14 discrete, and 20 continuous variables, and 2 additional observation identifiers).  A more thorough discussion can be found in the codebook in this repository.
+
+
+### Required Libraries
+
+---
+
+```{r, ECHO = TRUE, message = FALSE}
+library(readr)
+library(tibble)
+library(dplyr)
+library(ggplot2)
+library(GGally)
+library(purrr)
+library(scales)
+library(investr)
+library(broom)
+library(infer)
+library(mlr)
+library(fastDummies)
+library(car)
+library(ggcorrplot)
+library(MASS)
+library(caret)
+library(leaps)
+library(cowplot)
+options(scipen = 999)
+```
+
+## Import and Clean Training Dataset
+
+---
+
+```{r ECHO = TRUE, message = FALSE, results='hide'}
+#Read in the training data set and view
+setwd("~/SMUProjects/AmesIowaHousingPredictions/")
+train <- as_tibble(read_csv("Data/train.csv"))
+colnames(train)[colnames(train)=="3SsnPorch"] <- "SsnPorch"
+```
+
+### NA Review
+```{r, ECHO = TRUE}
+glimpse(train)
+#Determine the NAs and missing data in the dataset and list in descending order
+na.feature = which(colSums(is.na(train)) > 0)
+sort(colSums(sapply(train[na.feature], is.na)), decreasing = TRUE)
+```
+
+Previous analysis in SAS provided insights into the variables with large numbers of NAs.  NA for `Alley`, `Fence`, `MiscFeature`, `PooQC`, and `FireplaceQu` will be changed to **No Alley**, **No Fence**, etc....
+
+```{r ECHO = TRUE, message = FALSE, results='hide'}
+index <- which(is.na(train$Alley))
+train[index, 'Alley'] <- 'No Alley'
+
+index <- which(is.na(train$Fence))
+train[index, 'Fence'] <- 'No Fence'
+
+index <- which(is.na(train$MiscFeature))
+train[index, 'MiscFeature'] <- 'No Feature'
+
+index <- which(is.na(train$PoolQC))
+train[index, 'PoolQC'] <- 'No Pool'
+
+index <- which(is.na(train$FireplaceQu))
+train[index, 'FireplaceQu'] <- 'No Fireplace'
+```
+
+#### Garage Variable NAs
+We first want to verify that no Garages that have a specified type have a `GarageArea` or `GarageCars` less than zero, along with verifying there are no significant outliers in `GarageYrBlt`.  Garage variables account for 81 NAs in the *Train* dataset.  
+```{r ECHO = TRUE, message = FALSE}
+train[(is.na(train$GarageType) & train$GarageArea >0) | (is.na(train$GarageType) & train$GarageCars > 0), ]
+summary(train$GarageYrBlt)
+train %>%
+    filter(is.na(GarageCond) & !is.na(GarageType))
+```
+There are no garages newer than 2010, so we can assume all values for `GarageYrBlt`.  We have also confirmed all other garage-related NAs are valid, so we will replace NA with **No Garage** for both the categorical and continuous garage variables.   
+
+```{r ECHO = TRUE, message = FALSE}
+garagecatvariables <- c('GarageType', 'GarageFinish', 'GarageQual', 'GarageCond')
+for (i in seq_along(garagecatvariables)){
+    index <- which(is.na(train[garagecatvariables[i]]))
+    train[index, garagecatvariables[i]] <- 'No Garage'
+    #summary(as.factor(train$garagevariables[i])) receiving error with this line of code will investigate
+}
+
+garagecontvariables <- c('GarageYrBlt', 'GarageArea', 'GarageCars')
+
+for (i in seq_along(garagecontvariables)){
+    index <- which(is.na(train[garagecontvariables[i]]))
+    train[index, garagecontvariables[i]] <- 0
+    #summary(as.factor(train$garagevariables[i])) receiving error with this line of code will investigate
+}
+
+summary(as.factor(train$GarageQual))
+summary(as.factor(train$GarageCond))
+summary(as.factor(train$GarageType))
+summary(as.factor(train$GarageFinish))
+summary(train$GarageYrBlt)
+summary(train$GarageArea)
+summary(train$GarageCars)
+```
+
+
+#### Basement Variable NAs
+Taking a similar approach, we will verify whether any listing with non-NA values for `BsmtFinType1` or `BsmtCond` have `BsmtFinSF1` or `BsmtFinSF2` greater than zero.  
+```{r ECHO = TRUE, message = FALSE}
+bsmtvariables <- c('BsmtQual', 'BsmtCond', 'BsmtExposure', 'BsmtFinType1', 'BsmtFinType2')
+train[(is.na(train$BsmtFinType1) & train$BsmtFinSF1 >0) | (is.na(train$BsmtFinType2) & train$BsmtFinSF2 > 0), ]
+train[(is.na(train$BsmtExposure) & train$BsmtFinSF1 >0) | (is.na(train$BsmtCond) & train$BsmtFinSF1 > 0), ]
+```
+It is now safe to assume that all basement NA values are valid, so we will replace all basement NA values with **No Basement**.
+
+```{r ECHO = TRUE, message = FALSE}
+for (i in seq_along(bsmtvariables)){
+    index <- which(is.na(train[bsmtvariables[i]]))
+    train[index, bsmtvariables[i]] <- 'No Basement'
+    #summary(as.factor(train$garagevariables[i])) receiving error with this line of code will investigate
+}
+
+summary(as.factor(train$BsmtQual))
+summary(as.factor(train$BsmtCond))
+summary(as.factor(train$BsmtExposure))
+summary(as.factor(train$BsmtFinType1))
+summary(as.factor(train$BsmtFinType2))
+```
+
+####  Lot Frontage NAs
+The next variable we'll investigate is `LotFrontage`.  There are xxxxx NA observations for Lot Frontage, however, this is not a simple replacment.  Each `Neighborhood` has different median values for Lot Frontage, so we will look to impute the median `LotFrontage` by `Neighborhood` to fill in the remaining values.
+```{r ECHO = TRUE, message = FALSE, warning = FALSE}
+#Impute LotFrontage by Median per each neighborhood
+index <- which(is.na(train$LotFrontage))
+table(train[index, 'Neighborhood'])
+
+frontage_by_neighborhood <- train %>%
+    dplyr::select(Neighborhood, LotFrontage) %>%
+    group_by(Neighborhood) %>%
+    summarise(median_frontage = median(LotFrontage, na.rm = TRUE))
+
+for (i in index) {
+    med_frontage = frontage_by_neighborhood[frontage_by_neighborhood == train$Neighborhood[i], 'median_frontage']
+    # then replace the missing value with the median
+    train[i, 'LotFrontage'] = med_frontage[[1]]
+}
+```
+
+#### MasVnrArea, MasVnrType, and Electrical Types NAs
+For `MasVnrArea` and `MasVnrType` we first want to see if there are observations with a `MasVnrType` of **None** and `MasVnrArea` greater than 0, and there five homes that qualify.  Since we don't know if the areas are valid and no type is specified, we will set those five observation to 0 for `MasVnrArea`.  We'll then look to see if there are any observations with 0 `MasVnrArea`, but with a `MasVnrType` specified.  There are two such observations, so we will set the `MasVnrType` to **None** for those observations.  Finally we'll clean up any remaing NAs by replacing them with **None** or 0 for `MasVnrType` and `MasVnrArea` respectively.
+```{r ECHO = TRUE, message = FALSE, warning = FALSE}
+index <- which(train$MasVnrType == 'None' & train$MasVnrArea != 0)
+train[index,'MasVnrArea']
+train[index, 'MasVnrArea'] <- 0
+index <- which(train$MasVnrType != 'None' & train$MasVnrArea == 0)
+train[index,'MasVnrType']
+train[index, 'MasVnrType'] <- 'None'
+index <- which(is.na(train$MasVnrType) & is.na(train$MasVnrArea))
+train[index, 'MasVnrType'] <- 'None'
+train[index, 'MasVnrArea'] <- 0
+
+#Electrical types, median sale price for NA home is very near SBrkr median sale prices.
+index <- which(is.na(train$Electrical))
+train[index,'Electrical'] <- 'SBrkr'
+```
+
+### Categorical Data Cleaning and EDA
+First we'll create a function to create bar charts for selected categorical variables that are modiified following analysis.  Our goal in the analysis is to look for similarirties between the attributes of the categorical variables and combine then when appropriate based on Median `SalePrice`.
+```{r ECHO = TRUE, message = FALSE, warning = FALSE}
+catvariables <- c('MSZoning', 'Street', 'Alley', 'LotShape', 'LandContour', 'Utilities', 'LotConfig', 'LandSlope',
+                  'Condition1','Condition2', 'BldgType', 'HouseStyle', 'RoofStyle', 'RoofMatl', 'Exterior1st', 'Exterior2nd',
+                  'MasVnrType', 'ExterQual', 'ExterCond', 'Foundation', 'BsmtQual', 'BsmtCond', 'BsmtExposure', 'BsmtFinType1',
+                  'BsmtFinType2', 'Heating', 'HeatingQC', 'CentralAir', 'Electrical', 'KitchenQual', 'Functional', 'FireplaceQu',
+                  'GarageType', 'GarageFinish', 'GarageQual', 'GarageCond', 'PavedDrive', 'Fence', 'PoolQC', 'MiscFeature',
+                  'SaleType', 'SaleCondition')
+
+# Function to create bar chart for Categorical variables
+plotCategorical = function(cols, dataframe) {
+    for (col in cols) {
+        # Remove NA's & sort categories by tally
+        order.cols = names(sort(table(dataframe[,col]), decreasing = TRUE))
+        # qplot is ggplot's equivalent of base R's high-level plotting function `plot`
+        num.plot = ggplot(dataframe, aes(dataframe[,col])) +
+            # change bar color 
+            geom_bar(fill = 'cornflowerblue') +
+            # add the value labels to each bar
+            geom_text(aes(label = ..count..), stat='count', vjust=-0.5) +
+            # minimal theme
+            theme_minimal() +
+            # set scales for each plot to go from 0 to max of categorical feature
+            scale_y_continuous(limits = c(0,max(table(dataframe[,col]))*1.1)) +
+            scale_x_discrete(limits = order.cols) +
+            xlab(col) +
+            # rotate x-axis label text 30 degrees and set font size to 12
+            theme(axis.text.x = element_text(angle = 30, size=12))
+        # Show plot and suppress warning messages from plot function
+        suppressWarnings(print(num.plot))
+    }
+}
+```
+
+#### SaleType
+```{r ECHO = TRUE, message = FALSE, warning = FALSE}
+ggplot(train, aes(x = factor(SaleType), y = SalePrice)) + 
+    geom_boxplot(aes(fill = factor(SaleType))) + 
+    theme(axis.text.x = element_text(angle = 0, size = 10), legend.position = "none") 
+
+#Combine all Low Downpayment and Low Interest contracts into one category
+index <- which(train$SaleType == 'ConLD' | train$SaleType == 'ConLI' | train$SaleType == 'ConLw')
+train[index, 'SaleType'] <- 'ConLdLi'
+```
+As we can see above, the Median `SalePrice` for the Conditional Sales attributes are nearly equal, so theses will be combined into a single category **ConLdLi**.
+
+#### Heating
+```{r ECHO = TRUE, message = FALSE, warning = FALSE}
+ggplot(train, aes(x = factor(Heating), y = SalePrice)) + 
+    geom_boxplot(aes(fill = factor(Heating))) + 
+    theme(axis.text.x = element_text(angle = 0, size = 10), legend.position = "none") 
+
+#Combine Furnace type Heating into one Category
+index <- which(train$Heating == 'Floor' | train$Heating == 'OthW' | train$Heating == 'Wall' | train$Heating == 'Grav')
+train[index, 'Heating'] <- 'Furnace'
+```
+We can see above that the the four different furnace `Heating` types have similar Median `SalePrice` values, so we will combine them into one category, **Furnace**.
+
+#### Functional
+```{r ECHO = TRUE, message = FALSE, warning = FALSE}
+ggplot(train, aes(x = factor(Functional), y = SalePrice)) + 
+    geom_boxplot(aes(fill = factor(Functional))) + 
+    theme(axis.text.x = element_text(angle = 0, size = 10), legend.position = "none") 
+#Combine Furnace type Heating into one Category
+index <- which(train$Functional == 'Min1' | train$Functional == 'Min2')
+train[index, 'Functional'] <- 'Minor'
+```
+As you can see above, Min1 and Min2 have similar Median `SalePrice` value and will combined into one, more descriptive category, **Minor**.
+
+#### Condition 1 and Condition 2 
+```{r ECHO = TRUE, message = FALSE, warning = FALSE}
+ggplot(train, aes(x = factor(Condition1), y = SalePrice)) + 
+    geom_boxplot(aes(fill = factor(Condition1))) + 
+    theme(axis.text.x = element_text(angle = 0, size = 10), legend.position = "none") 
+
+#Review proximity to various conditions
+index <- which(train$Condition1 == 'PosA' | train$Condition1 == 'PosN')
+train[index, 'Condition1'] <- 'NearPos'
+
+index <- which(train$Condition2 == 'PosA' | train$Condition2 == 'PosN')
+train[index, 'Condition2'] <- 'NearPos'
+
+index <- which(train$Condition1 == 'RRAe' | train$Condition1 == 'RRAn' | train$Condition1 == 'RRNe' | train$Condition1 == 'RRNn')
+train[index, 'Condition1'] <- 'NearTrain'
+
+index <- which(train$Condition2 == 'RRAe' | train$Condition2 == 'RRAn' | train$Condition2 == 'RRNe' | train$Condition2 == 'RRNn')
+train[index, 'Condition2'] <- 'NearTrain'
+```
+There is very little difference in Median `SalePrice` based on direction of proximity to a Railway or Positive feature.  We will combine all of these into 2 categories, **NearPos** or **NearTrain**.
+
+
+#### LotShape and MSZoning Variable 
+```{r ECHO = TRUE, message = FALSE, warning = FALSE}
+ggplot(train, aes(x = factor(LotShape), y = SalePrice)) + 
+    geom_boxplot(aes(fill = factor(LotShape))) + 
+    theme(axis.text.x = element_text(angle = 0, size = 10), legend.position = "none") 
+
+#Combine IR2 and IR3
+index <- which(train$LotShape == 'IR2' | train$LotShape == 'IR3')
+train[index, 'LotShape'] <- 'IR2 + 3'
+
+# MSZoning Shorten to C (all) to C
+index <- which(train$MSZoning == "C (all)")
+train[index, 'MSZoning'] <- "C"
+```
+Irregular Lots Shapes 2 and 3 have similar Medial `SalePrice` values and will be combined into one category **IR2 + 3**, and we'll change `MSZoning` category **C (all)** to **C**.
+
+We'll now loop through all of the modified categorical variables to review their individual loadings and the Median `SalePrice` value for each category.
+```{r ECHO = TRUE, message = FALSE, warning = FALSE}
+#Variables combined during cleaning 
+modcats <- c('SaleType', 'MSZoning', 'Functional', 'Condition1', 'Condition2', 'LotShape', 'Heating')
+
+#Loop to print all bar charts for the categorical variables along with a summary of median price
+for (i in seq_along(modcats)){
+    plotCategorical(modcats[i], train)
+    train %>%
+        group_by_at(vars(modcats[i])) %>%
+        summarize(median_sale_price = median(SalePrice), n = n()) %>% print()
+}
+```
+
+### Cleaning for Ordinal Variables         
+
+#### Homes with 2 kitchens
+We'll primarily look at the impact of having two kitchens in a home.  There are 65 observations with 2 kitchens, with 60 of those being Two-Family Condominiums of Duplexes.  Only 5 homes categorized as Single-Family had 2 kitchens, with a Median `SalePrice` of $107,500.  With this in mind, `KitchenAbvGr` in these homes was changed to 1, along with 1 being subtracted from `TotRmsAbvGrd`.
+```{r ECHO = TRUE, message = FALSE, warning = FALSE}
+#Determine number and type of homes with 2 kitchens
+index <- which(train$KitchenAbvGr == 2)
+train[index, ] %>%
+    summarize(median_sale_price = median(SalePrice), n = n()) %>% print()
+
+twokitchens <- train[index, ]
+twokitchens %>%
+    group_by(BldgType) %>%
+    summarize(median_sale_price = median(SalePrice), n = n()) %>% print()
+
+index <- which(train$BldgType == '1Fam' & train$KitchenAbvGr == '2')
+singlefam2kitchen <- train[index, ]
+
+#Changed all Single-Family home types to have 1 Kitchen Above Ground
+index <- which(train$BldgType == '1Fam')
+train[index, 'KitchenAbvGr'] <- 1
+train[index, 'TotRmsAbvGrd'] <- train[index, 'TotRmsAbvGrd'] - 1
+```
+
+## Import and Clean Test Dataset
+
+---
+
+With the exception of the *Garage* and *Basement* variables, the code to clean the test dataset is nearly identical to the code required to clean the training dataset above.  I will only include code snippets and outputs from the analysis on the variables mentione above.  For a more thorough code review of the Test dataset, please see the **TestCleanEDA.R** file in the Code folder of this repository.
+```{r echo= FALSE, message = FALSE, warning= FALSE, results='hide'}
+#Read in the training data set and view
+setwd("~/SMUProjects/AmesIowaHousingPredictions/")
+test <- as_tibble(read_csv("Data/test.csv"))
+glimpse(test)
+
+colnames(test)[colnames(test)=="3SsnPorch"] <- "SsnPorch"
+
+#Determine the NAs and missing data in the dataset
+na.feature = which(colSums(is.na(test)) > 0)
+sort(colSums(sapply(test[na.feature], is.na)), decreasing = TRUE)
+
+################################################################
+#                        NA Removal                            #
+################################################################
+
+# Due to significant number of NAs and previous analysis in SAS, NAs converted to "No Alley, Fence, etc....."
+index <- which(is.na(test$Alley))
+test[index, 'Alley'] <- 'No Alley'
+
+index <- which(is.na(test$Fence))
+test[index, 'Fence'] <- 'No Fence'
+
+index <- which(is.na(test$MiscFeature))
+test[index, 'MiscFeature'] <- 'No Feature'
+
+index <- which(is.na(test$PoolQC))
+test[index, 'PoolQC'] <- 'No Pool'
+
+index <- which(is.na(test$FireplaceQu))
+test[index, 'FireplaceQu'] <- 'No Fireplace'
+
+
+#Impute LotFrontage by Median per each neighborhood
+index <- which(is.na(test$LotFrontage))
+head(test[index,])
+table(test[index, 'Neighborhood'])
+
+frontage_by_neighborhood <- test %>%
+    dplyr::select(Neighborhood, LotFrontage) %>%
+    group_by(Neighborhood) %>%
+    summarise(median_frontage = median(LotFrontage, na.rm = TRUE))
+
+any(is.na(frontage_by_neighborhood$median_frontage)) 
+index <- which(is.na(test$LotFrontage))
+
+for (i in index) {
+    med_frontage = frontage_by_neighborhood[frontage_by_neighborhood == test$Neighborhood[i], 'median_frontage']
+    # then replace the missing value with the median
+    test[i, 'LotFrontage'] = med_frontage[[1]]
+}
+
+#MasVnrArea and MasVnrType cleaning
+masvnrNA <- test[(!is.na(test$MasVnrArea) & is.na(test$MasVnrType)), ]
+index <- which(is.na(test$MasVnrType) & test$MasVnrArea != 0)
+test[index, 'MasVnrType'] <- 'BrkFace'
+
+index <- which(is.na(test$MasVnrType))
+test[index, 'MasVnrType'] <- 'None'
+test[index, 'MasVnrArea'] <- 0
+
+#Electrical types, median sale price for NA home is very near SBrkr median sale prices.
+index <- which(is.na(train$Electrical))
+train[index,'Electrical'] <- 'SBrkr'
+
+#MSZone cleaning
+MSZoneNA <- test[(is.na(test$MSZoning)), ]
+index <- which(is.na(test$MSZoning))
+test[index, 'MSZoning'] <- 'RL'
+test[index, 'Utilities'] <- 'AllPub'
+
+#BsmtFullBath cleaning
+BsmtFullNA <- test[(is.na(test$BsmtFullBath)), ]
+index <- which(is.na(test$BsmtFullBath))
+test[index, 'BsmtFullBath'] <- 0
+test[index, 'BsmtHalfBath'] <- 0
+test[index, 'BsmtFinSF1'] <- 0
+test[index, 'BsmtFinSF2'] <- 0
+test[index, 'BsmtUnfSF'] <- 0
+test[index, 'TotalBsmtSF'] <- 0
+
+FunctionalNA <- test[(is.na(test$Functional)), ]
+index <- which(is.na(test$Functional))
+test[index, 'Functional'] <- 'Typ'
+
+UtilitiesNA <- test[(is.na(test$Utilities)), ]
+index <- which(is.na(test$Utilities))
+test[index, 'Utilities'] <- 'AllPub'
+
+ExteriorNA <- test[(is.na(test$Exterior1st)), ]
+index <- which(is.na(test$Exterior1st))
+test[index, 'Exterior1st'] <- 'VinylSd'
+test[index, 'Exterior2nd'] <- 'VinylSd'
+
+SaleTypeNA <- test[(is.na(test$SaleType)), ]
+index <- which(is.na(test$SaleType))
+test[index, 'SaleType'] <- 'WD'
+
+KitchenQualNA <- test[(is.na(test$KitchenQual)), ]
+index <- which(is.na(test$KitchenQual))
+test[index, 'KitchenQual'] <- 'TA'
+
+
+################################################################
+#               Cleaning For Categorical Variables             #
+################################################################
+#Combine all Low Downpayment and Low Intereste contracts into one category
+index <- which(test$SaleType == 'ConLD' | test$SaleType == 'ConLI' | test$SaleType == 'ConLw')
+test[index, 'SaleType'] <- 'ConLdLi'
+
+#Combine all Low Downpayment and Low Intereste contracts into one category
+index <- which(test$Heating == 'Floor' | test$Heating == 'OthW' | test$Heating == 'Wall' | test$Heating == 'Grav')
+test[index, 'Heating'] <- 'Furnace'
+
+index <- which(test$Functional == 'Min1' | test$Functional == 'Min2')
+test[index, 'Functional'] <- 'Minor'
+
+#Review proximity to various conditions
+index <- which(test$Condition1 == 'PosA' | test$Condition1 == 'PosN')
+test[index, 'Condition1'] <- 'NearPos'
+
+index <- which(test$Condition2 == 'PosA' | test$Condition2 == 'PosN')
+test[index, 'Condition2'] <- 'NearPos'
+
+index <- which(test$Condition1 == 'RRAe' | test$Condition1 == 'RRAn' | test$Condition1 == 'RRNe' | test$Condition1 == 'RRNn')
+test[index, 'Condition1'] <- 'NearTrain'
+
+index <- which(test$Condition2 == 'RRAe' | test$Condition2 == 'RRAn' | test$Condition2 == 'RRNe' | test$Condition2 == 'RRNn')
+test[index, 'Condition2'] <- 'NearTrain'
+
+#Combine IR2 and IR3
+index <- which(test$LotShape == 'IR2' | test$LotShape == 'IR3')
+test[index, 'LotShape'] <- 'IR2 + 3'
+
+# MSZoning Shorten to C (all) to C
+index <- which(test$MSZoning == "C (all)")
+test[index, 'MSZoning'] <- "C"
+
+
+############################################################
+#              Cleaning for Ordinal Variables             #
+############################################################
+
+#Determine number and type of homes with 2 kitchens
+index <- which(test$KitchenAbvGr == 2)
+twokitchens <- test[index, ]
+twokitchens %>%
+    group_by(BldgType) %>% print()
+    
+
+index <- which(test$BldgType == '1Fam' & test$KitchenAbvGr == '2')
+singlefam2kitchen <- test[index, ]
+
+#Changed all Single-Family home types to have 1 Kitchen Above Ground
+index <- which(test$BldgType == '1Fam')
+test[index, 'KitchenAbvGr'] <- 1
+test[index, 'TotRmsAbvGrd'] <- test[index, 'TotRmsAbvGrd'] - 1
+```
+
+#### Garage and Basement Variables
+```{r echo= TRUE, message = FALSE, warning= FALSE}
+#Determine the NAs and missing data in the dataset
+na.feature = which(colSums(is.na(test)) > 0)
+sort(colSums(sapply(test[na.feature], is.na)), decreasing = TRUE)
+```
+As can be seen above, there is a miscompare in the number of NAs amongst all of the Garage Variables, with the majority having 78 NAs, but `GarageType` has 76 NAs and both `GarageCars` and `GarageArea` each have 1.  We can find the two missing NAs in the `GarageType` by running the code below.  We determine that each of these observations have **Detachd** for `GarageType`, with no other Garage variables filled in.  We will change `GarageType` to **No Garage** for each of these variables.
+
+```{r echo= TRUE, message = FALSE, warning= FALSE}
+# Verify no NA GarageTypes have an Area or Car number > 0
+GarTypeNA <- test[!is.na(test$GarageType) & is.na(test$GarageQual), ]
+print(GarTypeNA$GarageType)
+index <- which(!is.na(test$GarageType) & is.na(test$GarageCars))
+test[index, 'GarageType'] <- 'No Garage'
+```
+
+```{r echo= TRUE, message = FALSE, warning= FALSE}
+index <- which(!is.na(test$GarageType) & !is.na(test$GarageCars) & is.na(test$GarageQual))
+print(test[index, c('Id','GarageQual', 'GarageCond', 'GarageFinish', 'GarageYrBlt', 'GarageType', 'GarageArea', 'GarageCars')])
+```
+As we can see above, there are values for `GarageType`, `GarageArea`, and `GarageCars`, wo we cannot assume there is no Garage for this observation.  We will impute the values for the remaining Garage variables with the most common responses.
+```{r echo= TRUE, message = FALSE, warning= FALSE}
+test[index, 'GarageQual'] <- 'TA'
+test[index, 'GarageCond'] <- 'TA'
+test[index, 'GarageFinish'] <- 'Unf'
+test[index, 'GarageYrBlt'] <- test[index, 'YearBuilt']
+```
+Finally we look for any outliers in the `GarageYrBlt` variable and we find a Garage built in the year, 2207.  The house itself was built in 2007, so we will change `GarageYrBlt` to equal `YearBuilt` for this observation.
+```{r echo= TRUE, message = FALSE, warning= FALSE}
+# Verifying no outliers in GarageYrBlt  
+summary(test$GarageYrBlt)
+index <- which(test$GarageYrBlt == 2207)
+test[index, 'GarageYrBlt'] <- test[index, 'YearBuilt']
+```
+
+Finally we will replace the remaining NA values with **No Garage**.  Leaving 77 observations with the new **No Garage** value.
+```{r echo= TRUE, message = FALSE, warning= FALSE}
+garagecatvariables <- c('GarageType', 'GarageFinish', 'GarageQual', 'GarageCond')
+for (i in seq_along(garagecatvariables)){
+    index <- which(is.na(test[garagecatvariables[i]]))
+    test[index, garagecatvariables[i]] <- 'No Garage'
+    #summary(as.factor(train$garagevariables[i])) receiving error with this line of code will investigate
+}
+
+summary(as.factor(test$GarageQual))
+summary(as.factor(test$GarageCond))
+summary(as.factor(test$GarageType))
+summary(as.factor(test$GarageFinish))
+
+garagecontvariables <- c('GarageYrBlt', 'GarageArea', 'GarageCars')
+for (i in seq_along(garagecontvariables)){
+    index <- which(is.na(test[garagecontvariables[i]]))
+    test[index, garagecontvariables[i]] <- 0
+    #summary(as.factor(train$garagevariables[i])) receiving error with this line of code will investigate
+}
+
+summary(test$GarageYrBlt)
+summary(test$GarageArea)
+summary(test$GarageCars)
+```
+
+As we saw above there is a miscompare between the Basement variables with most having 44 NAs, however, `BsmtCond` had 45 and `BsmtFinType1` and `BsmtFinType2` had 42 NAs.  We'll more closely as the miscompare below.  
+
+```{r echo= TRUE, message = FALSE, warning= FALSE}
+bsmtvariables <- c('BsmtQual', 'BsmtCond', 'BsmtExposure', 'BsmtFinType1', 'BsmtFinType2')
+index <- which(!is.na(test$BsmtFinType1) & is.na(test$BsmtCond))
+print(test[index, c('Id', 'BsmtQual', 'BsmtCond', 'BsmtExposure', 'BsmtFinType1', 'BsmtFinType2')])
+index <- which(!is.na(test$BsmtCond) & is.na(test$BsmtExposure))
+print(test[index, c('Id', 'BsmtQual', 'BsmtCond', 'BsmtExposure', 'BsmtFinType1', 'BsmtFinType2')])
+index <- which(!is.na(test$BsmtCond) & is.na(test$BsmtQual))
+print(test[index, c('Id', 'BsmtQual', 'BsmtCond', 'BsmtExposure', 'BsmtFinType1', 'BsmtFinType2')])
+```
+We can see above that there are three observations that have all the basement variables assigned with the exception of `BsmtCond`.  Since Typical Average is the overwhelming majority response, we can safely assign the value **TA** to these homes for analysis.  There are also 2 homes with no `BasementExposure` value assigned, but all other variables assigned.  We will assign **No** to the `BsmtExposure` for this home.  Finally, there are two homes where there is no `BsmtQual` assigned, but all other basement variables have a value assigned.  We will again, assign the value of **TA** to the `BsmtQual` variable of these observations.  With operation we are now ready to write the cleaned dataset to *test_cleaned.csv* and begin the modeling process.
+
+```{r echo= TRUE, message = FALSE, warning= FALSE}
+index <- which(!is.na(test$BsmtCond) & is.na(test$BsmtExposure))
+test[index, 'BsmtExposure'] <- 'No'
+
+index <- which(!is.na(test$BsmtQual) & is.na(test$BsmtCond))
+test[index, 'BsmtCond'] <- 'TA'
+
+index <- which(!is.na(test$BsmtCond) & is.na(test$BsmtQual))
+test[index, 'BsmtQual'] <- 'TA'
+
+# Clean up any remaining NAs in the basement variables.
+for (i in seq_along(bsmtvariables)){
+    index <- which(is.na(test[bsmtvariables[i]]))
+    test[index, bsmtvariables[i]] <- 'No Basement'
+}
+
+summary(as.factor(test$BsmtQual))
+summary(as.factor(test$BsmtCond))
+summary(as.factor(test$BsmtExposure))
+summary(as.factor(test$BsmtFinType1))
+summary(as.factor(test$BsmtFinType2))
+```
+
+## Exploratory Data Analysis
+We'll first import the newly created *train_cleaned* and *test_cleaned* .csv files.  
+```{r echo= TRUE, message = FALSE, warning= FALSE}
+setwd("~/SMUProjects/AmesIowaHousingPredictions/")
+train <- as_tibble(read_csv("Data/train_cleaned.csv"))
+test <- as_tibble(read_csv("Data/test_cleaned.csv"))
+#Remove scientific notation
+options(scipen = 999)
+```
+
+```{r echo= FALSE, message = FALSE, warning= FALSE}
+catvariables <- c('MSSubClass', 'MSZoning', 'Street', 'Alley', 'LotShape', 'LandContour', 'Utilities', 'LotConfig', 'LandSlope',
+                  'Neighborhood', 'Condition1', 'Condition2', 'BldgType', 'HouseStyle', 'RoofStyle', 'RoofMatl', 'Exterior1st',
+                  'Exterior2nd', 'MasVnrType', 'ExterQual', 'ExterCond', 'Foundation', 'BsmtQual', 'BsmtCond', 'BsmtExposure',
+                  'BsmtFinType1', 'BsmtFinType2', 'Heating', 'HeatingQC', 'CentralAir', 'Electrical', 'KitchenQual', 'Functional',
+                  'FireplaceQu', 'GarageType', 'GarageFinish', 'GarageQual', 'GarageCond',
+                  'PavedDrive', 'Fence', 'PoolQC', 'MiscFeature', 'SaleType', 'SaleCondition')
+
+ordvariables <- c('OverallQual', 'OverallCond', 'BsmtFullBath', 'BsmtHalfBath', 'FullBath', 'HalfBath', 'BedroomAbvGr', 'KitchenAbvGr',
+                  'TotRmsAbvGrd', 'Fireplaces', 'GarageCars', 'MoSold', 'YrSold', 'GarageYrBlt', 'YearBuilt', 'YearRemodAdd')
+
+contvariables <- c('LotFrontage', 'LotArea', 'MasVnrArea', 'BsmtFinSF1', 'BsmtFinSF2', 'BsmtUnfSF', 'TotalBsmtSF', "FirstFlrSF",
+                   "SecondFlrSF", 'LowQualFinSF', 'GrLivArea', 'GarageArea', 'WoodDeckSF', 'OpenPorchSF', 'EnclosedPorch', 'ScreenPorch',
+                   "SsnPorch", 'PoolArea', 'MiscVal')
+```
+Previous analysis in SAS (Code can be found in the appendix below) revealed a non-linear relationshipe between `SalePrice`, `LotArea`, and `LotFrontage`, so we will first perform a Log transformation for each of those variables, and then check the linearity of the relationships among the conintuous variables via a scatterplot matrix.
+
+```{r echo= TRUE, message = FALSE, warning= FALSE}
+# Create Scatterplot Matrix for LogSalePrice, LogLotArea, and LogLotFrontage
+train['LogSalePrice'] = log(train['SalePrice'])
+train['LogLotArea'] = log(train['LotArea'])
+train['LogLotFrontage'] = log(train['LotFrontage'])
+GenHome = c('LogSalePrice', 'LogLotArea', 'LogLotFrontage')
+SqFtRm = c('LogSalePrice', 'GrLivArea', 'FirstFlrSF', 'SecondFlrSF', 'TotRmsAbvGrd')
+BsmtGar = c('LogSalePrice', 'TotalBsmtSF', 'GarageArea', 'GarageCars')
+DeckPool = c('LogSalePrice', 'WoodDeckSF', 'OpenPorchSF', 'PoolArea')
+theme_update(plot.title = element_text(hjust = 0.5))
+ggpairs(train[,GenHome], title = "ScatterPlot Matrix of General Home Data", lower = list(continuous = 'smooth'), 
+        diag=list(continuous = 'barDiag'))
+ggpairs(train[,SqFtRm], title = "ScatterPlot Matrix of Rooms and Sqft", lower = list(continuous = 'smooth'), 
+        diag=list(continuous = 'barDiag'))
+ggpairs(train[,BsmtGar], title = "ScatterPlot Matrix of Basements and Garages", lower = list(continuous = 'smooth'), 
+        diag=list(continuous = 'barDiag'))
+ggpairs(train[,DeckPool], title = "ScatterPlot Matrix of Decks and Pools", lower = list(continuous = 'smooth'), 
+        diag=list(continuous = 'barDiag'))
+```
+With a few exceptions, most of the continuous variables appear to have a linear relationship with `LogSalePrice`, so this was a valid transformation, and many of the variables are nomrally distributed.  Strong correlations exist between `LogSalePrice`, `GrLivArea` (0.803), `LogLotArea` (0.684), and `GarageArea` (0.882).  It is expected following the variable selection process, that these continuous variables will make the final model.  Next we'll look at some of the more influential ordinal variables.
+```{r echo= TRUE, message = FALSE, warning= FALSE}
+#Review TotRmsAbvGrd
+ggplot(train, aes(x = factor(TotRmsAbvGrd), y = SalePrice)) +
+geom_boxplot(aes(fill = factor(TotRmsAbvGrd))) +
+theme(axis.text.x = element_text(angle = 0, size = 10), legend.position = "none")
+#The Median value for home prices drops significantly above 9 rooms
+
+train %>%
+    group_by(TotRmsAbvGrd) %>%
+    summarize(median_sale_price = median(SalePrice), n = n()) %>% print()
+```
+As we can see above more rooms is isn't necessarily a strong predictor of `SalePrice`.  Once a home reaches 9 rooms, the Median `SalePrice` begins to fall.  Perhaps this is the result of a desire for an Open Concept floor plan, and the the larger amount of rooms tends to section off the house.  Next we'll look at how the age of a home affects sale price.
+```{r echo= TRUE, message = FALSE, warning= FALSE}
+#Review MoSold and YrSold
+ggplot(train, aes(x = factor(MoSold), y = SalePrice)) +
+geom_boxplot(aes(fill = factor(MoSold))) +
+theme(axis.text.x = element_text(angle = 0, size = 10), legend.position = "none")
+
+#Create HomeAgeSold and YearRemodAdd
+train_Age <- train %>%
+    mutate(HomeAgeSold = YrSold - YearBuilt, AgeRemod = YrSold - YearRemodAdd)
+train_Age_group <- train_Age %>%
+    group_by(HomeAgeSold) %>%
+    summarize(median_sale_price = median(SalePrice), n = n()) %>% print()
+
+#Review Review median SalePrice vs. HomeAgeSold
+ggplot(train_Age_group, aes(x = HomeAgeSold, y = log(median_sale_price))) +
+geom_point(col = "blue") +
+geom_vline(xintercept = 25, colour = 'red') +
+geom_vline(xintercept = 75, colour = 'red')
+```
+We can see from the boxplot above that there is little variance in Median `SalePrice` based on the Month a home is sold, so no futher analysis will be done on the `MoSold` variable.  When looking at a home's age, there is strong negative correlation between `HomeAgeSold` and `LogSalePrice` that begins to level off beginning at **25** years.  We begin to see a larger variance in `LogSalePrice` as we get closer to and beyond **75** years of age for a home.  There appear to be some outliers at **74**, **75**, **114**, **115**, **126**, and **129** years of age for a home.  We'll compare those observations to outliers found during Regression diagostics in the Modeling Section.  For now, we will create a new categorical variable, `Agecat`, with three levels *Historic*, *Older Home*, and *Newer Home*
+```{r echo= TRUE, message = FALSE, warning= FALSE}
+#Compare these outliers later to outliers determined by the linear regression model
+# Create 3 home age categories
+attach(train_Age)
+train_Age$Agecat[HomeAgeSold >= 75] <- "Historic"
+train_Age$Agecat[HomeAgeSold > 25 & HomeAgeSold < 75] <- "Older Home"
+train_Age$Agecat[HomeAgeSold <= 25] <- "Newer Home"
+detach(train_Age)
+
+index <- which(train_Age['HomeAgeSold'] == 74 | train_Age['HomeAgeSold'] == 75 | train_Age['HomeAgeSold'] == 114 | train_Age['HomeAgeSold'] == 115 | train_Age['HomeAgeSold'] == 126 | train_Age['HomeAgeSold'] == 129)
+print(train_Age[index, c('Id', 'HomeAgeSold', 'Agecat') ])
+```
+We'll now look for other correlations between our ordinal and continous variables to futher reduce the possibility of multicollinearity in our final model.  Following one round of reviewing a correlation plot of our variables, it was decided to remove` GarageCars` from future analysis due to its 0.9 correlation with `GarageArea`.  `FirstFlrSF` was also removed due to a 0.8 correlation with `TotalBsmtSF` and `GrLivArea`.  Finally, `SecondFlrSF` and `TotalRmsAbvGrd` were also removed due to their correlation with `GrLivArea` (0.7 and 0.8 respectively).  Below is the final resultant correlation plots, following the removal of the variables mentioned above.
+```{r echo= FALSE, message = FALSE, warning= FALSE, results='hide'}
+catvariables <- c('MSSubClass', 'MSZoning', 'Street', 'Alley', 'LotShape', 'LandContour', 'Utilities', 'LotConfig', 'LandSlope',
+                  'Neighborhood', 'Condition1', 'Condition2', 'BldgType', 'HouseStyle', 'RoofStyle', 'RoofMatl', 'Exterior1st',
+                  'Exterior2nd', 'MasVnrType', 'ExterQual', 'ExterCond', 'Foundation', 'BsmtQual', 'BsmtCond', 'BsmtExposure',
+                  'BsmtFinType1', 'BsmtFinType2', 'Heating', 'HeatingQC', 'CentralAir', 'Electrical', 'KitchenQual', 'Functional',
+                  'FireplaceQu', 'GarageType', 'GarageFinish', 'GarageQual', 'GarageCond', 'PavedDrive', 'Fence', 'PoolQC',
+                  'MiscFeature', 'SaleType', 'SaleCondition', 'Agecat')
+ordvariables <- c('OverallQual', 'OverallCond', 'BsmtFullBath', 'BsmtHalfBath', 'FullBath', 'HalfBath', 'BedroomAbvGr', 'KitchenAbvGr',
+                  'TotRmsAbvGrd', 'Fireplaces', 'GarageCars', 'MoSold', 'YrSold', 'GarageYrBlt', 'YearBuilt', 'YearRemodAdd')
+contvariables <- c('LotFrontage', 'LotArea', 'MasVnrArea', 'BsmtFinSF1', 'BsmtFinSF2', 'BsmtUnfSF', 'TotalBsmtSF', "FirstFlrSF",
+                   "SecondFlrSF", 'LowQualFinSF', 'GrLivArea', 'GarageArea', 'WoodDeckSF', 'OpenPorchSF', 'EnclosedPorch', 'ScreenPorch',
+                   "SsnPorch", 'PoolArea', 'MiscVal', 'HomeAgeSold', 'AgeRemod')
+
+#Update variable vectors
+
+ordvariablesup <- c('OverallQual', 'OverallCond', 'BsmtFullBath', 'BsmtHalfBath', 'FullBath', 'HalfBath', 'BedroomAbvGr',
+                    'KitchenAbvGr', 'Fireplaces', 'MoSold', 'YrSold', 'YearBuilt', 'GarageYrBlt', 'YearRemodAdd')
+contvariablesup <- c('LogLotFrontage', 'LogLotArea', 'MasVnrArea', 'BsmtFinSF1', 'BsmtFinSF2', 'BsmtUnfSF', 'TotalBsmtSF',
+                     'GrLivArea', 'GarageArea', 'WoodDeckSF', 'HomeAgeSold', 'AgeRemod', 'OpenPorchSF', 'EnclosedPorch',
+                     'ScreenPorch', "SsnPorch", 'PoolArea', 'LowQualFinSF', 'MiscVal')
+catvariablesup <- c('MSSubClass', 'MSZoning', 'Street', 'Alley', 'LotShape', 'LandContour', 'Utilities', 'LotConfig', 'LandSlope',
+                    'Neighborhood', 'Condition1', 'Condition2', 'BldgType', 'HouseStyle', 'RoofStyle', 'RoofMatl', 'Exterior1st',
+                    'Exterior2nd', 'MasVnrType', 'ExterQual', 'ExterCond', 'Foundation', 'BsmtQual', 'BsmtCond', 'BsmtExposure',
+                    'BsmtFinType1', 'BsmtFinType2', 'Heating', 'HeatingQC', 'CentralAir', 'Electrical', 'KitchenQual', 'Functional',
+                    'FireplaceQu', 'GarageType', 'GarageFinish', 'GarageQual', 'GarageCond',
+                    'PavedDrive', 'Fence', 'PoolQC', 'MiscFeature', 'SaleType', 'SaleCondition', 'Agecat')
+```
+
+```{r echo= TRUE, message = FALSE, warning= FALSE}
+corord <- round(cor(train_Age[ordvariablesup]),1)
+corcont <- round(cor(train_Age[contvariablesup]), 1)
+corordcont <- round(cor(train_Age[ordvariablesup], train_Age[contvariablesup]), 1)
+ggcorrplot(corord, hc.order = TRUE, lab = TRUE)
+ggcorrplot(corcont, hc.order = TRUE, lab = TRUE)
+ggcorrplot(corordcont, hc.order = TRUE, type = "lower", lab = TRUE, ggtheme = ggplot2::theme_gray)
+#Removing YearRemodAdd due to -1 correlation with AgeRemod and Removing YrSold and YrBuilt for similar correlation with HomeAgeSold
+```
+```{r echo= FALSE, message = FALSE, warning= FALSE}
+#Final variable vector update
+ordvariablesup <- c('OverallQual', 'OverallCond', 'BsmtFullBath', 'BsmtHalfBath', 'FullBath', 'HalfBath', 'BedroomAbvGr',
+                    'KitchenAbvGr', 'Fireplaces', 'MoSold', 'GarageYrBlt')
+contvariablesup <- c('LogLotFrontage', 'LogLotArea', 'MasVnrArea', 'BsmtFinSF1', 'BsmtFinSF2', 'BsmtUnfSF', 'TotalBsmtSF',
+                     'GrLivArea', 'GarageArea', 'WoodDeckSF', 'HomeAgeSold', 'AgeRemod', 'OpenPorchSF', 'EnclosedPorch',
+                     'ScreenPorch', "SsnPorch", 'PoolArea', 'LowQualFinSF', 'MiscVal')
+```
+Finally, we'll remove the `YrBuilt` and `YearRemodAdd` variables due to their -1 correlation with variables we created, `HomeAgeSold` and `AgeRemod`.  We'll now begin the modeling process with our variable selection techniques.
+
+## Regression Model Building
+To judge our model effectiveness, we will be looking for the variable combinations that produce a high $R^2 value, while minimizing Root Mean Squared Error (RMSE).  We were tasked with creating separate models via Forward, Backwards, and Step-Wise variable selection methods.  We will also use 10-fold cross validation as a means of avoiding overfitting with our model.  We will also look at some diagnostic results from our final selected model to ensure we remove outlier observations and meet all required assumptions of linear regression.  Finally, we create a prediction.csv that can be submitted for the Kaggle portion of this report.
+
+### The Backward Selection Model
+```{r echo= TRUE, message = FALSE, warning= FALSE}
+predictorvariables <- c(ordvariablesup, contvariablesup, catvariablesup)
+alpha <- 0.05
+crit_val <- qt(1-alpha/2, df = nrow(train) - 2)
+Formula <- formula(paste("LogSalePrice ~ ",
+paste(predictorvariables, collapse=" + ")))
+
+#Create Backward Selection model
+train_lm <- lm(Formula, train_Age)
+# Set seed for reproducibility
+set.seed(123)
+# Set up repeated k-fold cross-validation
+train.control <- trainControl(method = "cv", number = 10)
+# Train the model
+step.model <- train(Formula, train_Age,
+                    method = "leapBackward",
+                    tuneGrid = data.frame(nvmax = 1:50),
+                    trControl = train.control)
+step.model$results
+step.model$bestTune
+```
+As can be seen above with the Backwards model we need at least 20 variables to explain 80% of the variance within the model, with 29 variables being optimal.  Let's look at the Foward model next to see if it is more efficient.
+
+### The Forward Selection Model
+```{r echo= TRUE, message = FALSE, warning= FALSE}
+#Create Forward Selection model
+set.seed(123)
+# Set up repeated k-fold cross-validation
+train.control <- trainControl(method = "cv", number = 10)
+# Train the model
+step.model <- train(Formula, train_Age,
+                    method = "leapForward",
+                    tuneGrid = data.frame(nvmax = 1:50),
+                    trControl = train.control
+)
+step.model$results
+step.model$bestTune
+coef(step.model$finalModel, 42)
+```
+The forward model exceeds 80% of the variance in 11 variables and only needs 12 variables to exceed the best performance of the backwards model.  It is clearly a more efficient model at selecting variables for inclusion in the model.  
+
+```{r echo= TRUE, message = FALSE, warning= FALSE}
+train_best_lm <- lm(LogSalePrice ~ OverallQual + OverallCond + BsmtFullBath + FullBath + LogLotArea + GrLivArea + HomeAgeSold +
+                        AgeRemod + MSZoning + Agecat + FireplaceQu + GarageArea + WoodDeckSF + OpenPorchSF + Neighborhood + 
+                        SsnPorch + Condition2 + GarageType + KitchenQual + SaleType + Foundation + Exterior1st + 
+                        BsmtFinType2, data = train_Age)
+
+#Run diagnostic tests to determine model validity
+summary(train_best_lm)
+train_best_lm %>%
+    tidy(conf.int = TRUE, conf.level = 1-alpha)
+train_best_lm_aug <- train_best_lm %>%
+    augment()
+index <- which(train_best_lm_aug$.cooksd >= 0.25)
+high_cooksd <- train_best_lm_aug[index, ]
+print(high_cooksd)
+outlierTest(train_best_lm)
+vif(train_best_lm)
+```
+
+We'll now remove the ouliers IDed from regression diagnostic tests.  There was only one match from the previous Age of home analysis, Id 584.  We'll re-run the Forward and StepWise Models to determine the final model for prediction.  In analyzing the data, there appear to be a number of possible reasons driving these values as outliers:
+- 2 commercial subclass dwellings (property #31 and property #496) in the Iowa DOT and Rail Road neighborhood
+- 40,094 square foot lot (property #524)
+- Home built in 2008 with a 63,887 square foot lot (property #1299)
+
+```{r echo= TRUE, message = FALSE, warning= FALSE}
+#Remove outliers IDed during the Model testing 
+train_Age <- train_Age[!(train_Age$Id %in% c(1299, 524, 584, 633, 496, 31, 969, 917, 1325, 813)),]
+
+#Run the final Model to create the SalesPrice predictions
+set.seed(123)
+# Set up repeated k-fold cross-validation
+train.control <- trainControl(method = "cv", number = 10)
+# Train the model
+step.model <- train(Formula, train_Age,
+                    method = "leapSeq",
+                    tuneGrid = data.frame(nvmax = 1:40),
+                    trControl = train.control)
+step.model$results
+step.model$bestTune
+
+#Run the final Model to create the SalesPrice predictions
+set.seed(123)
+# Set up repeated k-fold cross-validation
+train.control <- trainControl(method = "cv", number = 10)
+# Train the model
+step.model <- train(Formula, train_Age,
+                    method = "leapForward",
+                    tuneGrid = data.frame(nvmax = 1:60),
+                    trControl = train.control)
+step.model$results
+step.model$bestTune
+```
+
+The removal of the outlier values saw an increase of 7% in R-squared, along with a significant decrease in RMSE.  We will now fit the final Regression model and verify Regression diagnostics.  We also see that we can account for 90% of the variance with only 29 variables utilizing the Forward Selection Model.  We will use the coefficients selected by this model to create our final model for prediction.
+
+```{r echo= TRUE, message = FALSE, warning= FALSE}
+coef(step.model$finalModel, 29)
+```
+
+```{r echo= TRUE, message = FALSE, warning= FALSE}
+train_final_lm <- lm(LogSalePrice ~ OverallQual + OverallCond  + BsmtFullBath + KitchenAbvGr + LogLotArea + BsmtFinSF1  + GrLivArea + 
+                         GarageArea + WoodDeckSF + HomeAgeSold + AgeRemod + OpenPorchSF + SsnPorch + MSZoning + Neighborhood +
+                         Condition2 + Exterior1st + Foundation + BsmtQual  + FireplaceQu + GarageType + SaleType + 
+                         Agecat, data = train_Age)                          
+
+train_final_lm %>%
+    tidy(conf.int = TRUE, conf.level = 1-alpha)
+train_final_lm_aug <- train_final_lm %>%
+    augment()
+vif(train_final_lm)
+plot(train_final_lm)
+```
+
+Upon review of the diagnostic plots, we see the following:  
+- Normality:The data appears to be relatively normal with some departures from linearity in the qqplot in the tails of the residuals, because of this the decision was made to log transform the following variables: Sales Price, Year Remodel Addition, 2nd Floor Square footage, Lot Area, and square footage of living area in the house per 100 foot
+- Constant Variance: The residual plots form a relatively random cloud which supports Constant Variance.
+- Linear Trend:  Similarly, the residual plots support linearity of the model.
+- Independence: Based on the data provided, it does not appear that any homes have appeared more than once—therefore, we will assume independence.
+- Influential Points:
+Please see the discussion above for overall influential points.  
+
+The Variance Inflation Factors for each of the coefficients are all less than 10, so there is minimal multicollinearity within the model, so it is safe to proceed with creating the final predictions from the test dataset. 
+```{r echo= TRUE, message = FALSE, warning= FALSE}
+#Transformations and Feature Engineering in the test dataset
+test['LogLotArea'] = log(test['LotArea'])
+test['LogLotFrontage'] = log(test['LotFrontage'])
+test <- test %>%
+    mutate(HomeAgeSold = YrSold - YearBuilt, AgeRemod = YrSold - YearRemodAdd)
+attach(test)
+test$Agecat[HomeAgeSold >= 75] <- "Historic"
+test$Agecat[HomeAgeSold > 25 & HomeAgeSold < 75] <- "Older Home"
+test$Agecat[HomeAgeSold <= 25] <- "Newer Home"
+detach(test)
+
+#Create Predictions for test Dataset and back transform SalesPrice
+pred <- exp(predict(train_final_lm, test))
+pred <- data.frame(id = test[,1], pred)
+colnames(pred)[2] <- 'SalePrice'
+index <- which(pred$PricePredicitons <= 0)
+pred[index, 'SalePrice'] <- 100000
+print(head(pred))
+```
+The final Kaggle submission of the this Model had a error of 0.133, which is better than 50% of the subimssions, but could be improved by more advanced regression techniques, including Ridge Regression and ElasticNet.  These techniques will be investigated in future projects.  Forward elimination seemed to be the most efficient model achieving an adjusted R-squared using only 29 variables.  
+### Appendix (Original SAS Code)
+```{r echo= TRUE, message = FALSE, warning= FALSE}
+# /* Train Data Import */
+# 
+# PROC IMPORT OUT=WORK.train
+# 	DATAFILE= "/home/qthomas0/sasuser.v94/Unit14/train.csv"
+# 	DBMS= CSV REPLACE;
+# 	GETNAMES=YES;
+# 	DATAROW=2;
+# RUN;
+# 
+# /* Import Test Data */ 
+# PROC IMPORT OUT=WORK.test
+# 	DATAFILE= "/home/qthomas0/sasuser.v94/Unit14/test.csv"
+# 	DBMS= CSV REPLACE;
+# 	GETNAMES=YES;
+# 	DATAROW=2;
+# RUN;
+# 
+# /* Clean & Transform Train Data */
+# PROC STANDARD DATA=WORK.train out = train replace;
+# data train3;
+# 	set train;
+# 	if GarageYrBlt = "." then GarageYrBlt = 0;
+# 	if LotFrontage = "NA" then LotFrontage = 0.01;
+# /*combine categorical variables*/
+# 	if LotShape in ('IR2' 'IR3') then LotShape = 'IRComb';
+# 	if LandSlope in ('Mod' 'Sev') then LandSlope = 'NGtl';
+# 	if Alley = 'NA' then Alley = 'NoAlley';
+# 	if RoofMatl in ('Membran' 'Metal' 'Roll' 'Tar&Grv' 'WdShake' 'WdShngl') then RoofMatl = 'Other';
+# 	if RoofStyle in ('Flat' 'Gambr' 'Mansa' 'Shed') then RoofStyle = 'Other';
+# 	if Heating in ('GasW' 'OthW') then Heating = 'HoWt';
+# 	if Heating in ('Floo' 'Grav' 'Wall') then Heating = 'Oth';
+# 	if Electrical in ('FuseP' 'Mix' 'NA') then Electrical = 'Other';
+# 	new = input(LotFrontage, 8.);
+# 	drop LotFrontage;
+# 	rename new=LotFrontage;
+# 	drop MSSubClass;
+# 	if ID = 31 then delete; /*Remove influential outliers*/
+# 	if ID = 496 then delete;
+# 	if ID = 524 then delete;
+# 	if ID = 969 then delete;
+# 	if ID = 1299 then delete;
+# 	if LotShape in ('IR2' 'IR3') then LotShape = 'IRComb';
+# 	SQFT100 = round(GrLIvArea, 100); /*round square feet and logs*/
+# 	logsaleprice = log(SalePrice);
+# 	logsqft100 = log(SQFT100);
+# 	logyearremod = log(YearRemodAdd);
+# 	loglotarea = log(LotArea);
+# 	loglotfrontage = log(LotFrontage);
+# RUN;
+# 
+# /*Clean and Transform Test Data*/
+# proc import out = test
+# 		datafile = '/folders/myfolders/SASDATA/test.csv'
+# 		DBMS = CSV REPLACE;
+# 		GETNAMES = YES;
+# 		DATAROW = 2;
+# RUN;
+# proc standard data = test out = test replace;
+# data test2; 
+# set test;
+# if GarageYrBlt = "." then GarageYrBlt = 0;
+# if LotFrontage = "NA" then LotFrontage = 0;
+# if LotShape in ('IR2' 'IR3') then LotShape = 'IRComb';
+# if LandSlope in ('Mod' 'Sev') then LandSlope = 'NGtl';
+# if Alley = 'NA' then Alley = 'NoAlley';
+# if RoofMatl in ('Membran' 'Metal' 'Roll' 'Tar&Grv' 'WdShake' 'WdShngl') then RoofMatl = 'Other';
+# if RoofStyle in ('Flat' 'Gambr' 'Mansa' 'Shed') then RoofStyle = 'Other';
+# if Heating in ('GasW' 'OthW') then Heating = 'HoWt';
+# if Heating in ('Floo' 'Grav' 'Wall') then Heating = 'Oth';
+# if Electrical in ('FuseP' 'Mix' 'NA') then Electrical = 'Other';
+# new = input(LotFrontage, 8.);
+# drop LotFrontage;
+# rename new=LotFrontage;
+# drop MSSubClass;
+# if LotShape in ('IR2' 'IR3') then LotShape = 'IRComb';
+# SQFT100 = round(GrLIvArea, 100);
+# logsaleprice = log(SalePrice);
+# logsqft100 = log(SQFT100);
+# logyearremod = log(YearRemodAdd);
+# loglotarea = log(LotArea);
+# loglotfrontage = log(LotFrontage);
+# run;
+# data test2;
+# set test2;
+# SalePrice = .; /*Addition of saleprice field as suggested by Dr. Sadler*/
+# ;
+# proc print data = test2; run;
+# data train2;
+# set train3 test2;
+# run;
+# 
+# Plot Code:
+# title "Bar Chart for General Property Information";
+# PROC FREQ data=train3;
+# TABLES Neighborhood MSZoning Street Alley LotShape LandContour LotConfig LandSlope Condition1 Condition2 / plots = freqplot(type = barchart) nocum nopercent;
+# run;
+# title "Bar Chart for External Home Features";
+# PROC FREQ data=train3;
+# TABLES RoofStyle RoofMatl Exterior1st Exterior2nd MasVnrType ExterQual ExterCond Foundation / plots = freqplot(type = barchart) nocum nopercent; 
+# run;
+# title "Bar Chart for Basement Data";
+# PROC FREQ data=train3;
+# TABLES BsmtQual BsmtCond BsmtExposure BsmtFinType1 BsmtFinType2 / plots = freqplot(type = barchart) nocum nopercent;
+# run;
+# title "Bar Chart for Garage and Driveway Data";
+# PROC FREQ data=train3;
+# TABLES GarageType GarageFinish GarageQual GarageCond PavedDrive / plots = freqplot(type = barchart) nocum nopercent;
+# run;
+# title "Bar Chart for House Style Kitchens and Fireplaces";
+# PROC FREQ data=train3;
+# TABLES BldgType HouseStyle SaleType SaleCondition KitchenQual Functional FireplaceQu / plots = freqplot(type = barchart) nocum nopercent;
+# RUN;
+# title "Bar Chart for Utilities";
+# PROC FREQ data=train3;
+# TABLES Heating HeatingQC CentralAir Utilities Electrical / plots = freqplot(type = barchart) nocum nopercent;
+# run;
+# title "ScatterPlot Matrix for General Home Data";
+# proc sgscatter data = train3;
+# matrix logSalePrice LotFrontage loglotarea OverallQual OverallCond YearBuilt logyearremod MoSold YrSold; 
+# run;
+# title "ScatterPlot Square Footages and Rooms";
+# proc sgscatter data = train3;
+# matrix logSalePrice SQFT100 _1stFlrSF _2ndFlrSF BedroomAbvGr TotRmsAbvGrd LowQualFinSF MasVnrArea;
+# run;
+# title "ScatterPlot Matrix Kitchens and Bathrooms";
+# proc sgscatter data = train3;
+# matrix logSalePrice FullBath HalfBath KitchenAbvGr  BsmtHalfBath BsmtFullBath;  
+# run;
+# title "ScatterPlot Matrix Garages and Basements";
+# proc sgscatter data = train3;
+# matrix logSalePrice BsmtFinSF1 BsmtFinSF2 BsmtUnfSF TotalBsmtSF GarageCars GarageArea GarageYrBlt;
+# run;
+# title "ScatterPlot Matrix Fire Places and Decks";
+# proc sgscatter data = train3;
+# matrix logSalePrice Fireplaces WoodDeckSF OpenPorchSF EnclosedPorch _3SsnPorch ScreenPorch PoolArea MiscVal;
+# run;
+# 
+# Forward Selection Code:
+# proc glmselect data = train3 plots = all seed=765364538;
+# class Neighborhood MSZoning Street Alley LotShape LandContour Utilities LotConfig LandSlope Condition1 Condition2 BldgType HouseStyle RoofStyle RoofMatl Exterior1st Exterior2nd MasVnrType ExterQual ExterCond Foundation BsmtQual BsmtCond BsmtExposure BsmtFinType1 BsmtFinType2 Heating HeatingQC CentralAir Electrical KitchenQual Functional FireplaceQu GarageType GarageFinish GarageQual GarageCond PavedDrive PoolQC Fence MiscFeature SaleType SaleCondition;
+# model logsaleprice = loglotfrontage loglotarea OverallQual OverallCond YearBuilt logyearremod MasVnrArea BsmtFinSF1 BsmtFinSF2 BsmtUnfSF TotalBsmtSF _1stFlrSF _2ndFlrSF LowQualFinSF logsqft100 BsmtFullBath BsmtHalfBath FullBath HalfBath BedroomAbvGr KitchenAbvGr TotRmsAbvGrd Fireplaces GarageYrBlt GarageCars GarageArea WoodDeckSF OpenPorchSF EnclosedPorch _3SsnPorch ScreenPorch PoolArea MiscVal MoSold YrSold | Neighborhood MSZoning Street Alley LotShape LandContour Utilities LotConfig LandSlope Condition1 Condition2 BldgType HouseStyle RoofStyle RoofMatl Exterior1st Exterior2nd MasVnrType ExterQual ExterCond Foundation BsmtQual BsmtCond BsmtExposure BsmtFinType1 BsmtFinType2 Heating HeatingQC CentralAir Electrical KitchenQual Functional FireplaceQu GarageType GarageFinish GarageQual GarageCond PavedDrive PoolQC Fence MiscFeature SaleType SaleCondition / selection=forward(select = SL stop=CV) cvmethod = random(50) hierarchy = single stats = adjrsq;
+# run;
+# 
+# 
+# Code to Produce output to Kaggle
+# proc glm data = train2 plots = all;
+# class Neighborhood MSZoning SaleCondition KitchenQual Functional;
+# model logsaleprice = OverallQual logsqft100 BsmtFinSF1 OverallCond YearBuilt loglotarea TotalBsmtSF GarageCars KitchenAbvGr logyearremod OpenPorchSF | Neighborhood MSZoning SaleCondition KitchenQual Functional / solution clparm tolerance;
+# output out = results p = Predict;
+# run;
+# data results2;
+# set results;
+# if Predict > 0 then SalePrice = exp(Predict);
+# if Predict < 0 then SalePrice = 100000; /*Value based on experience in Real Estate*/
+# keep id SalePrice;
+# where id > 1460;
+# ;
+# 
+# proc export data = results2
+# 	outfile = '/folders/myfolders/SASDATA/submit1.csv'
+# 	DBMS = CSV
+# 	REPLACE;
+# RUN;
+# 
+# Backwards Elimination Code:
+# proc glmselect data = train3 seed=9 plots = all;
+# class Neighborhood MSZoning Street Alley LotShape LandContour Utilities LotConfig LandSlope Condition1 Condition2 BldgType HouseStyle RoofStyle RoofMatl Exterior1st Exterior2nd MasVnrType ExterQual ExterCond Foundation BsmtQual BsmtCond BsmtExposure BsmtFinType1 BsmtFinType2 Heating HeatingQC CentralAir Electrical KitchenQual Functional FireplaceQu GarageType GarageFinish GarageQual GarageCond PavedDrive PoolQC Fence MiscFeature SaleType SaleCondition;
+# model logsaleprice = loglotfrontage loglotarea OverallQual OverallCond YearBuilt logyearremod MasVnrArea BsmtFinSF1 BsmtFinSF2 BsmtUnfSF TotalBsmtSF _1stFlrSF _2ndFlrSF LowQualFinSF logsqft100 BsmtFullBath BsmtHalfBath FullBath HalfBath BedroomAbvGr KitchenAbvGr TotRmsAbvGrd Fireplaces GarageYrBlt GarageCars GarageArea WoodDeckSF OpenPorchSF EnclosedPorch _3SsnPorch ScreenPorch PoolArea MiscVal MoSold YrSold | Neighborhood MSZoning Street Alley LotShape LandContour Utilities LotConfig LandSlope Condition1 Condition2 BldgType HouseStyle RoofStyle RoofMatl Exterior1st Exterior2nd MasVnrType ExterQual ExterCond Foundation BsmtQual BsmtCond BsmtExposure BsmtFinType1 BsmtFinType2 Heating HeatingQC CentralAir Electrical KitchenQual Functional FireplaceQu GarageType GarageFinish GarageQual GarageCond PavedDrive PoolQC Fence MiscFeature SaleType SaleCondition / selection=backward(select = SL stop=CV) cvmethod = random(50) slstay = .15 stats = adjrsq;
+# run;
+# 
+# Stepwise:
+# /* StepWise Model */
+# proc glmselect data = train3 SEED=999 plots = all;
+# class Neighborhood MSZoning Street Alley LotShape LandContour Utilities LotConfig LandSlope Condition1 Condition2 BldgType HouseStyle RoofStyle RoofMatl Exterior1st Exterior2nd MasVnrType ExterQual ExterCond Foundation BsmtQual BsmtCond BsmtExposure BsmtFinType1 BsmtFinType2 Heating HeatingQC CentralAir Electrical KitchenQual Functional FireplaceQu GarageType GarageFinish GarageQual GarageCond PavedDrive PoolQC Fence MiscFeature SaleType SaleCondition;model logsaleprice = loglotfrontage loglotarea OverallQual OverallCond YearBuilt logyearremod MasVnrArea BsmtFinSF1 BsmtFinSF2 BsmtUnfSF TotalBsmtSF _1stFlrSF _2ndFlrSF LowQualFinSF logsqft100 BsmtFullBath BsmtHalfBath FullBath HalfBath BedroomAbvGr KitchenAbvGr TotRmsAbvGrd Fireplaces GarageYrBlt GarageCars GarageArea WoodDeckSF OpenPorchSF EnclosedPorch _3SsnPorch ScreenPorch PoolArea MiscVal MoSold YrSold | Neighborhood MSZoning Street Alley LotShape LandContour Utilities LotConfig LandSlope Condition1 Condition2 BldgType HouseStyle RoofStyle RoofMatl Exterior1st Exterior2nd MasVnrType ExterQual ExterCond Foundation BsmtQual BsmtCond BsmtExposure BsmtFinType1 BsmtFinType2 Heating HeatingQC CentralAir Electrical KitchenQual Functional FireplaceQu GarageType GarageFinish GarageQual GarageCond PavedDrive PoolQC Fence MiscFeature SaleType SaleCondition / selection=STEPWISE(stop=CV) cvmethod = random(50) slstay = .10 stats = adjrsq; run;
+# 
+# 	Custom Model
+# /* load train data*/
+# 
+# /* generate model using backwards elimination*/
+# proc glmselect data = train3 seed=9 plots = all;
+# class Neighborhood MSZoning Street Alley LotShape LandContour Utilities LotConfig LandSlope Condition1 Condition2 BldgType HouseStyle RoofStyle RoofMatl Exterior1st Exterior2nd MasVnrType ExterQual ExterCond Foundation BsmtQual BsmtCond BsmtExposure BsmtFinType1 BsmtFinType2 Heating HeatingQC CentralAir Electrical KitchenQual Functional FireplaceQu GarageType GarageFinish GarageQual GarageCond PavedDrive PoolQC Fence MiscFeature SaleType SaleCondition;
+# model logsaleprice = loglotfrontage loglotarea OverallQual OverallCond YearBuilt logyearremod MasVnrArea BsmtFinSF1 BsmtFinSF2 BsmtUnfSF TotalBsmtSF _1stFlrSF _2ndFlrSF LowQualFinSF logsqft100 BsmtFullBath BsmtHalfBath FullBath HalfBath BedroomAbvGr KitchenAbvGr TotRmsAbvGrd Fireplaces GarageYrBlt GarageCars GarageArea WoodDeckSF OpenPorchSF EnclosedPorch _3SsnPorch ScreenPorch PoolArea MiscVal MoSold YrSold | Neighborhood MSZoning Street Alley LotShape LandContour Utilities LotConfig LandSlope Condition1 Condition2 BldgType HouseStyle RoofStyle RoofMatl Exterior1st Exterior2nd MasVnrType ExterQual ExterCond Foundation BsmtQual BsmtCond BsmtExposure BsmtFinType1 BsmtFinType2 Heating HeatingQC CentralAir Electrical KitchenQual Functional FireplaceQu GarageType GarageFinish GarageQual GarageCond PavedDrive PoolQC Fence MiscFeature SaleType SaleCondition / selection=forward(select = SL stop=CV) cvmethod = random(50) stats = adjrsq;
+# run;
+# 
+# /*Generate data for submission to Kaggle */
+# /*Added ExterQual, ExterCond, housestyle, and bldgstyle to backwards elimination*/
+# proc glm data = train2 plots = all;
+# class OverallQual Neighborhood GarageCars SaleCondition MSZoning KitchenQual KitchenAbvGr Functional BsmtExposure Condition1 ExterQual ExterCond housestyle bldgtype;
+# model logsaleprice = OverallQual logsqft100 Neighborhood BsmtFinSF1 OverallCond YearBuilt loglotarea TotalBsmtSF GarageCars SaleCondition MSZoning KitchenQual KitchenAbvGr Functional BsmtExposure Condition1 ExterQual ExterCond housestyle bldgtype/ solution clparm tolerance;
+# output out = results p = Predict;
+# run;
+```
