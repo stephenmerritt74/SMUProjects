@@ -1,0 +1,293 @@
+<?xml version="1.0"?>
+<AlteryxDocument yxmdVer="2018.2">
+  <Nodes>
+    <Node ToolID="2">
+      <GuiSettings Plugin="AlteryxBasePluginsGui.DbFileInput.DbFileInput">
+        <Position x="54" y="54" />
+      </GuiSettings>
+      <Properties>
+        <Configuration>
+          <Passwords />
+          <File OutputFileName="" RecordLimit="" SearchSubDirs="False" FileFormat="56">C:\Udacity\CapstoneProject\Data\Existing_Store.xlsm|||`Sheet1$`</File>
+          <FormatSpecificOptions>
+            <FirstRowData>False</FirstRowData>
+            <ImportLine>1</ImportLine>
+          </FormatSpecificOptions>
+        </Configuration>
+        <Annotation DisplayMode="0">
+          <Name />
+          <DefaultAnnotationText>Existing_Store.xlsm
+Table=`Sheet1$`</DefaultAnnotationText>
+          <Left value="False" />
+        </Annotation>
+        <MetaInfo connection="Output">
+          <RecordInfo>
+            <Field name="Period" source="File: C:\Udacity\CapstoneProject\Data\Existing_Store.xlsm|||`Sheet1$`" type="Double" />
+            <Field name="Sub_Period" source="File: C:\Udacity\CapstoneProject\Data\Existing_Store.xlsm|||`Sheet1$`" type="Double" />
+            <Field name="Produce" source="File: C:\Udacity\CapstoneProject\Data\Existing_Store.xlsm|||`Sheet1$`" type="Double" />
+            <Field name="Produce_high_95" source="File: C:\Udacity\CapstoneProject\Data\Existing_Store.xlsm|||`Sheet1$`" type="Double" />
+            <Field name="Produce_high_80" source="File: C:\Udacity\CapstoneProject\Data\Existing_Store.xlsm|||`Sheet1$`" type="Double" />
+            <Field name="Produce_low_80" source="File: C:\Udacity\CapstoneProject\Data\Existing_Store.xlsm|||`Sheet1$`" type="Double" />
+            <Field name="Produce_low_95" source="File: C:\Udacity\CapstoneProject\Data\Existing_Store.xlsm|||`Sheet1$`" type="Double" />
+          </RecordInfo>
+        </MetaInfo>
+      </Properties>
+      <EngineSettings EngineDll="AlteryxBasePluginsEngine.dll" EngineDllEntryPoint="AlteryxDbFileInput" />
+    </Node>
+    <Node ToolID="3">
+      <GuiSettings Plugin="AlteryxBasePluginsGui.DbFileInput.DbFileInput">
+        <Position x="54" y="150" />
+      </GuiSettings>
+      <Properties>
+        <Configuration>
+          <Passwords />
+          <File OutputFileName="" RecordLimit="" SearchSubDirs="False" FileFormat="56">C:\Udacity\CapstoneProject\Data\New_Store.xlsm|||`Sheet1$`</File>
+          <FormatSpecificOptions>
+            <FirstRowData>False</FirstRowData>
+            <ImportLine>1</ImportLine>
+          </FormatSpecificOptions>
+        </Configuration>
+        <Annotation DisplayMode="0">
+          <Name />
+          <DefaultAnnotationText>New_Store.xlsm
+Table=`Sheet1$`</DefaultAnnotationText>
+          <Left value="False" />
+        </Annotation>
+        <MetaInfo connection="Output">
+          <RecordInfo>
+            <Field name="Period" source="File: C:\Udacity\CapstoneProject\Data\New_Store.xlsm|||`Sheet1$`" type="Double" />
+            <Field name="Sub_Period" source="File: C:\Udacity\CapstoneProject\Data\New_Store.xlsm|||`Sheet1$`" type="Double" />
+            <Field name="Cluster1_Forecast" source="File: C:\Udacity\CapstoneProject\Data\New_Store.xlsm|||`Sheet1$`" type="Double" />
+            <Field name="Cluster1_Total" source="File: C:\Udacity\CapstoneProject\Data\New_Store.xlsm|||`Sheet1$`" type="Double" />
+            <Field name="Cluster2_Forecast" source="File: C:\Udacity\CapstoneProject\Data\New_Store.xlsm|||`Sheet1$`" type="Double" />
+            <Field name="Cluster2_Total" source="File: C:\Udacity\CapstoneProject\Data\New_Store.xlsm|||`Sheet1$`" type="Double" />
+            <Field name="Cluster3_Forecast" source="File: C:\Udacity\CapstoneProject\Data\New_Store.xlsm|||`Sheet1$`" type="Double" />
+            <Field name="Cluster3_Total" source="File: C:\Udacity\CapstoneProject\Data\New_Store.xlsm|||`Sheet1$`" type="Double" />
+            <Field name="Total_All_Formats" source="File: C:\Udacity\CapstoneProject\Data\New_Store.xlsm|||`Sheet1$`" type="Double" />
+          </RecordInfo>
+        </MetaInfo>
+      </Properties>
+      <EngineSettings EngineDll="AlteryxBasePluginsEngine.dll" EngineDllEntryPoint="AlteryxDbFileInput" />
+    </Node>
+    <Node ToolID="5">
+      <GuiSettings Plugin="AlteryxBasePluginsGui.Join.Join">
+        <Position x="222" y="66" />
+      </GuiSettings>
+      <Properties>
+        <Configuration joinByRecordPos="False">
+          <JoinInfo connection="Left">
+            <Field field="Year" />
+            <Field field="Month" />
+          </JoinInfo>
+          <JoinInfo connection="Right">
+            <Field field="Year" />
+            <Field field="Month" />
+          </JoinInfo>
+          <SelectConfiguration>
+            <Configuration outputConnection="Join">
+              <OrderChanged value="False" />
+              <CommaDecimal value="False" />
+              <SelectFields>
+                <SelectField field="Left_Year" selected="True" rename="Left_Year" type="Double" size="8" />
+                <SelectField field="Left_Month" selected="True" rename="Left_Month" type="Double" size="8" />
+                <SelectField field="Right_Year" selected="False" rename="Right_Year" type="Double" size="8" />
+                <SelectField field="Right_Month" selected="False" rename="Right_Month" type="Double" size="8" />
+                <SelectField field="Left_Period" selected="True" rename="Year" />
+                <SelectField field="Left_Sub_Period" selected="True" rename="Month" />
+                <SelectField field="Left_Produce_high_95" selected="False" />
+                <SelectField field="Left_Produce_high_80" selected="False" />
+                <SelectField field="Left_Produce_low_80" selected="False" />
+                <SelectField field="Left_Produce_low_95" selected="False" />
+                <SelectField field="Right_Period" selected="False" rename="Right_Period" />
+                <SelectField field="Right_Sub_Period" selected="False" rename="Right_Sub_Period" />
+                <SelectField field="Right_Cluster1_Forecast" selected="False" />
+                <SelectField field="Right_Total_Cluster1" selected="False" />
+                <SelectField field="Right_Cluster2_Forecast" selected="False" />
+                <SelectField field="Right_Total_Cluster2" selected="False" />
+                <SelectField field="Right_Cluster3_Forecast" selected="False" />
+                <SelectField field="Right_Total_Cluster3" selected="False" />
+                <SelectField field="*Unknown" selected="True" />
+              </SelectFields>
+            </Configuration>
+          </SelectConfiguration>
+        </Configuration>
+        <Annotation DisplayMode="0">
+          <Name />
+          <DefaultAnnotationText />
+          <Left value="False" />
+        </Annotation>
+      </Properties>
+      <EngineSettings EngineDll="AlteryxBasePluginsEngine.dll" EngineDllEntryPoint="AlteryxJoin" />
+    </Node>
+    <Node ToolID="7">
+      <GuiSettings Plugin="AlteryxBasePluginsGui.AlteryxSelect.AlteryxSelect">
+        <Position x="138" y="150" />
+      </GuiSettings>
+      <Properties>
+        <Configuration>
+          <OrderChanged value="False" />
+          <CommaDecimal value="False" />
+          <SelectFields>
+            <SelectField field="Period" selected="True" rename="Year" type="V_String" size="19" />
+            <SelectField field="Sub_Period" selected="True" rename="Month" type="V_String" size="19" />
+            <SelectField field="Cluster1_Forecast" selected="False" />
+            <SelectField field="Total_Cluster1" selected="False" />
+            <SelectField field="Cluster2_Forecast" selected="False" />
+            <SelectField field="Total_Cluster2" selected="False" />
+            <SelectField field="Cluster3_Forecast" selected="False" />
+            <SelectField field="Total_Cluster3" selected="False" />
+            <SelectField field="Total_All_Clusters" selected="True" rename="New_Store_Forecast" />
+            <SelectField field="*Unknown" selected="True" />
+          </SelectFields>
+        </Configuration>
+        <Annotation DisplayMode="0">
+          <Name />
+          <DefaultAnnotationText />
+          <Left value="False" />
+        </Annotation>
+      </Properties>
+      <EngineSettings EngineDll="AlteryxBasePluginsEngine.dll" EngineDllEntryPoint="AlteryxSelect" />
+    </Node>
+    <Node ToolID="8">
+      <GuiSettings Plugin="AlteryxBasePluginsGui.AlteryxSelect.AlteryxSelect">
+        <Position x="138" y="54" />
+      </GuiSettings>
+      <Properties>
+        <Configuration>
+          <OrderChanged value="False" />
+          <CommaDecimal value="False" />
+          <SelectFields>
+            <SelectField field="Period" selected="True" rename="Year" type="V_String" size="19" />
+            <SelectField field="Sub_Period" selected="True" rename="Month" type="V_String" size="19" />
+            <SelectField field="Produce" selected="True" rename="Existing_Store_Forecast" />
+            <SelectField field="Produce_high_95" selected="False" />
+            <SelectField field="Produce_high_80" selected="False" />
+            <SelectField field="Produce_low_80" selected="False" />
+            <SelectField field="Produce_low_95" selected="False" />
+            <SelectField field="*Unknown" selected="True" />
+          </SelectFields>
+        </Configuration>
+        <Annotation DisplayMode="0">
+          <Name />
+          <DefaultAnnotationText />
+          <Left value="False" />
+        </Annotation>
+      </Properties>
+      <EngineSettings EngineDll="AlteryxBasePluginsEngine.dll" EngineDllEntryPoint="AlteryxSelect" />
+    </Node>
+    <Node ToolID="11">
+      <GuiSettings Plugin="AlteryxBasePluginsGui.BrowseV2.BrowseV2">
+        <Position x="306" y="126" />
+      </GuiSettings>
+      <Properties>
+        <Configuration>
+          <TempFile>C:\Users\SteveM\AppData\Local\Temp\Engine_5824_5933205c15d5440c9da82040c4a37575_\Engine_2724_1374a6b6d29b4b76b7e600968bd3677c_.yxdb</TempFile>
+          <TempFileDataProfiling />
+          <Layout>
+            <ViewMode>Single</ViewMode>
+            <ViewSize value="100" />
+            <View1>
+              <DefaultTab>Profile</DefaultTab>
+              <Hints>
+                <Table />
+              </Hints>
+            </View1>
+            <View2 />
+          </Layout>
+        </Configuration>
+        <Annotation DisplayMode="0">
+          <Name />
+          <DefaultAnnotationText />
+          <Left value="False" />
+        </Annotation>
+      </Properties>
+      <EngineSettings EngineDll="AlteryxBasePluginsEngine.dll" EngineDllEntryPoint="AlteryxBrowseV2" />
+    </Node>
+    <Node ToolID="12">
+      <GuiSettings Plugin="AlteryxBasePluginsGui.DbFileOutput.DbFileOutput">
+        <Position x="354" y="66" />
+      </GuiSettings>
+      <Properties>
+        <Configuration>
+          <File FileFormat="56" MaxRecords="">C:\Udacity\CapstoneProject\Data\Joined_Forecast.xlsm|||Sheet1</File>
+          <Passwords />
+          <FormatSpecificOptions>
+            <OutputOption>Overwrite</OutputOption>
+          </FormatSpecificOptions>
+          <MultiFile value="False" />
+        </Configuration>
+        <Annotation DisplayMode="0">
+          <Name />
+          <DefaultAnnotationText>Joined_Forecast.xlsm
+Table=Sheet1</DefaultAnnotationText>
+          <Left value="False" />
+        </Annotation>
+      </Properties>
+      <EngineSettings EngineDll="AlteryxBasePluginsEngine.dll" EngineDllEntryPoint="AlteryxDbFileOutput" />
+    </Node>
+  </Nodes>
+  <Connections>
+    <Connection>
+      <Origin ToolID="2" Connection="Output" />
+      <Destination ToolID="8" Connection="Input" />
+    </Connection>
+    <Connection>
+      <Origin ToolID="3" Connection="Output" />
+      <Destination ToolID="7" Connection="Input" />
+    </Connection>
+    <Connection>
+      <Origin ToolID="5" Connection="Join" />
+      <Destination ToolID="11" Connection="Input" />
+    </Connection>
+    <Connection>
+      <Origin ToolID="5" Connection="Join" />
+      <Destination ToolID="12" Connection="Input" />
+    </Connection>
+    <Connection>
+      <Origin ToolID="7" Connection="Output" />
+      <Destination ToolID="5" Connection="Right" />
+    </Connection>
+    <Connection>
+      <Origin ToolID="8" Connection="Output" />
+      <Destination ToolID="5" Connection="Left" />
+    </Connection>
+  </Connections>
+  <Properties>
+    <Memory default="True" />
+    <GlobalRecordLimit value="0" />
+    <TempFiles default="True" />
+    <Annotation on="True" includeToolName="False" />
+    <ConvErrorLimit value="10" />
+    <ConvErrorLimit_Stop value="False" />
+    <CancelOnError value="False" />
+    <DisableBrowse value="False" />
+    <EnablePerformanceProfiling value="False" />
+    <DisableAllOutput value="False" />
+    <ShowAllMacroMessages value="False" />
+    <ShowConnectionStatusIsOn value="True" />
+    <ShowConnectionStatusOnlyWhenRunning value="True" />
+    <ZoomLevel value="0" />
+    <LayoutType>Horizontal</LayoutType>
+    <MetaInfo>
+      <NameIsFileName value="True" />
+      <Name>Task3-3_Merge_Forecasts</Name>
+      <Description />
+      <RootToolName />
+      <ToolVersion />
+      <ToolInDb value="False" />
+      <CategoryName />
+      <SearchTags />
+      <Author />
+      <Company />
+      <Copyright />
+      <DescriptionLink actual="" displayed="" />
+      <Example>
+        <Description />
+        <File />
+      </Example>
+    </MetaInfo>
+    <Events>
+      <Enabled value="True" />
+    </Events>
+  </Properties>
+</AlteryxDocument>
